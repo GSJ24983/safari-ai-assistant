@@ -2,5 +2,7 @@ PyPDF2
 streamlit
 pillow
 python-dotenv
-chromadb
 google-genai
+chromadb==0.4.24
+protobuf==4.25.3
+opentelemetry-exporter-otlp-proto-grpc==1.23.0
