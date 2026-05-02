@@ -3,5 +3,5 @@ streamlit
 pillow
 python-dotenv
 google-genai
-chromadb==0.5.20
-numpy<2.0
+sentence-transformers
+numpy
