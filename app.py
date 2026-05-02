@@ -5,6 +5,8 @@
 # ============================================================
 
 import os
+import subprocess
+import base64
 from dotenv import load_dotenv
 import streamlit as st
 from google import genai
@@ -14,6 +16,12 @@ from chromadb.utils import embedding_functions
 
 load_dotenv()
 
+# ── Auto-ingest on first boot (for Streamlit Cloud) ───────────
+if not os.path.exists("./chroma_db"):
+    st.info("⏳ First-time setup: building manual database... (takes ~1 min)")
+    subprocess.run(["python", "ingest.py"], check=True)
+    st.rerun()
+
 # ── Page setup ────────────────────────────────────────────────
 st.set_page_config(
     page_title="Safari AI Assistant",
@@ -21,6 +29,21 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed"
 )
+
+# ── Password gate ─────────────────────────────────────────────
+password = st.text_input("🔐 Enter access code to use this demo", type="password")
+if password != "safari2024":
+    st.warning("Enter the access code to continue. Contact Gaurav kavee.gauravjoshi@gmail.com to get access.")
+    st.stop()
+
+# ── Session rate limit ────────────────────────────────────────
+if "question_count" not in st.session_state:
+    st.session_state.question_count = 0
+
+MAX_QUESTIONS = 3  # Limit to 3 questions per session for demo purposes
+if st.session_state.question_count >= MAX_QUESTIONS:
+    st.warning("⚠️ You've reached the 3-question demo limit. Contact Gaurav kavee.gauravjoshi@gmail.com for more access!")
+    st.stop()
 
 # ── Connect to services (runs once per session) ───────────────
 @st.cache_resource
@@ -207,6 +230,8 @@ if question:
                     "role": "assistant",
                     "content": answer
                 })
+                # Increment question counter after successful answer
+                st.session_state.question_count += 1
             except Exception as e:
                 st.error(f"Something went wrong: {e}")
                 st.info("Check the VS Code terminal for details.")
