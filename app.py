@@ -140,7 +140,7 @@ Rules:
         model="gemini-2.5-flash",
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
-            max_output_tokens=800 if not img_bytes else 4000,
+            max_output_tokens=2000 if not img_bytes else 4000,
             temperature=0.2
         ),
         contents=contents
@@ -151,8 +151,8 @@ Rules:
 # ── Page header ───────────────────────────────────────────────
 st.title("🚗 Tata Safari AI Assistant")
 st.caption(
-    "Ask anything about your Safari — powered by the official "
-    "service manual and infotainment manual."
+    "Ask anything about your Safari — powered by the official manuals! This demo uses Google Gemini to answer your questions based on the content of the Tata Safari "
+    "🔬 Portfolio demo: limited to 3 questions per session."
 )
 st.divider()
 
