@@ -1,24 +1,24 @@
-# app.py — GEMINI VERSION
+# app.py — GEMINI VERSION (no ChromaDB — uses numpy similarity search)
 # ============================================================
 # Tata Safari AI Assistant
-# Uses: ChromaDB (local search) + Google Gemini (free AI brain)
+# Uses: numpy vector search (local) + Google Gemini (free AI brain)
 # ============================================================
 
 import os
 import subprocess
 import base64
+import pickle
+import numpy as np
 from dotenv import load_dotenv
 import streamlit as st
 from google import genai
 from google.genai import types
-import chromadb
-from chromadb.utils import embedding_functions
 
 load_dotenv()
 
 # ── Auto-ingest on first boot (for Streamlit Cloud) ───────────
-if not os.path.exists("./chroma_db"):
-    st.info("⏳ First-time setup: building manual database... (takes ~1 min)")
+if not os.path.exists("./safari_db.pkl"):
+    st.info("⏳ First-time setup: building manual database... (takes ~2 min)")
     subprocess.run(["python", "ingest.py"], check=True)
     st.rerun()
 
@@ -33,43 +33,46 @@ st.set_page_config(
 # ── Password gate ─────────────────────────────────────────────
 password = st.text_input("🔐 Enter access code to use this demo", type="password")
 if password != "safari2024":
-    st.warning("Enter the access code to continue. Contact Gaurav kavee.gauravjoshi@gmail.com to get access.")
+    st.warning("Enter the access code to continue. Contact Gaurav to get access.")
     st.stop()
 
 # ── Session rate limit ────────────────────────────────────────
 if "question_count" not in st.session_state:
     st.session_state.question_count = 0
 
-MAX_QUESTIONS = 3  # Limit to 3 questions per session for demo purposes
+MAX_QUESTIONS = 10
 if st.session_state.question_count >= MAX_QUESTIONS:
-    st.warning("⚠️ You've reached the 3-question demo limit. Contact Gaurav kavee.gauravjoshi@gmail.com for more access!")
+    st.warning("⚠️ You've reached the 10-question demo limit. Contact Gaurav for more access!")
     st.stop()
 
-# ── Connect to services (runs once per session) ───────────────
+# ── Load vector DB and Gemini (runs once per session) ─────────
 @st.cache_resource
 def load_services():
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        return None, None, "no_key"
+        return None, None, None, "no_key"
 
-    if not os.path.exists("./chroma_db"):
-        return None, None, "no_db"
+    if not os.path.exists("./safari_db.pkl"):
+        return None, None, None, "no_db"
 
     try:
+        from sentence_transformers import SentenceTransformer
         gemini_client = genai.Client(api_key=api_key)
-        ef  = embedding_functions.DefaultEmbeddingFunction()
-        db  = chromadb.PersistentClient(path="./chroma_db")
-        col = db.get_collection(name="safari_manual", embedding_function=ef)
-        return gemini_client, col, "ok"
-    except Exception as e:
-        return None, None, f"error: {e}"
 
-gemini_client, collection, status = load_services()
+        with open("./safari_db.pkl", "rb") as f:
+            db = pickle.load(f)
+
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+        return gemini_client, db, model, "ok"
+    except Exception as e:
+        return None, None, None, f"error: {e}"
+
+gemini_client, db, embed_model, status = load_services()
 
 # ── Error guards ──────────────────────────────────────────────
 if status == "no_key":
     st.error("⚠️ Gemini API key not found.")
-    st.info("Add GEMINI_API_KEY=your-key to your .env file and restart.")
+    st.info("Add GEMINI_API_KEY to Streamlit Cloud secrets.")
     st.stop()
 if status == "no_db":
     st.error("⚠️ Manual database not found.")
@@ -83,19 +86,26 @@ if status.startswith("error"):
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ── Search ChromaDB for relevant manual pages ─────────────────
-def search_manual(query: str) -> str:
+# ── Search using cosine similarity ───────────────────────────
+def search_manual(query: str, n_results: int = 5) -> str:
     try:
-        results = collection.query(query_texts=[query], n_results=5)
-        if not results["documents"] or not results["documents"][0]:
-            return ""
+        query_vec = embed_model.encode([query])[0]
+        embeddings = db["embeddings"]
+        chunks = db["chunks"]
+
+        # Cosine similarity
+        norms = np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_vec)
+        norms = np.where(norms == 0, 1e-10, norms)
+        scores = np.dot(embeddings, query_vec) / norms
+
+        top_indices = np.argsort(scores)[::-1][:n_results]
+
         parts = []
-        for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-            src  = meta.get("source", "Manual")
-            page = meta.get("page", "?")
-            parts.append(f"[{src} — Page {page}]\n{doc}")
+        for idx in top_indices:
+            chunk = chunks[idx]
+            parts.append(f"[{chunk['source']} — Page {chunk['page']}]\n{chunk['text']}")
         return "\n\n---\n\n".join(parts)
-    except Exception:
+    except Exception as e:
         return ""
 
 # ── Ask Gemini ────────────────────────────────────────────────
@@ -140,7 +150,7 @@ Rules:
         model="gemini-2.5-flash",
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
-            max_output_tokens=2000 if not img_bytes else 4000,
+            max_output_tokens=800 if not img_bytes else 4000,
             temperature=0.2
         ),
         contents=contents
@@ -151,8 +161,8 @@ Rules:
 # ── Page header ───────────────────────────────────────────────
 st.title("🚗 Tata Safari AI Assistant")
 st.caption(
-    "Ask anything about your Safari — powered by the official manuals! This demo uses Google Gemini to answer your questions based on the content of the Tata Safari "
-    "🔬 Portfolio demo: limited to 3 questions per session."
+    "Ask anything about your Safari — powered by the official "
+    "service manual and infotainment manual."
 )
 st.divider()
 
@@ -218,12 +228,11 @@ if question:
         with st.spinner("Searching manual..."):
             try:
                 if img_bytes:
-                    # Broaden search for image queries to catch warning light sections
                     image_search_query = question + " warning light indicator dashboard tell tales error"
                     context = search_manual(image_search_query)
                 else:
                     context = search_manual(question)
-                answer  = ask_gemini(question, context, img_bytes, img_type)
+                answer = ask_gemini(question, context, img_bytes, img_type)
                 st.markdown(answer)
                 st.caption("📖 Source: Tata Safari Official Manual · Beta")
                 st.session_state.messages.append({
