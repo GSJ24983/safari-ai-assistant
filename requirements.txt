@@ -3,6 +3,5 @@ streamlit
 pillow
 python-dotenv
 google-genai
-chromadb==0.4.24
-protobuf==4.25.3
-opentelemetry-exporter-otlp-proto-grpc==1.23.0
+chromadb==0.5.20
+numpy<2.0
