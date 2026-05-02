@@ -1,0 +1,64 @@
+Tata Safari Ready Reckoner - Warning Lights Guide
+Created from community knowledge for Safari owners
+
+---
+
+OIL LAMP LIGHT
+Warning light: Oil lamp light on cluster
+
+Blinking YES: Check oil level after switching off the car and waiting for 10 minutes. This is a hardcoded service reminder which recurs every 15k kms (15k, 30k, 45k). Can only be reset at the service centre. Go at your convenience to get it reset. Drive on.
+
+Blinking NO: Low oil pressure or level. Check for leaks and oil level as above. Do not drive if the oil level is too low. Switch off the car and refill before starting. Visit the service centre.
+
+---
+
+ENGINE LIGHT
+Warning light: Engine light, check engine light, engine malfunction indicator
+
+Usually always on - this can be due to many things:
+1. Disconnect the battery negative terminal, press the horn a few times, reconnect and see if gone.
+2. Check all wires around engine bay, especially near the battery and air filter box.
+3. DPF clog: drive for 15-20 kms in 3rd gear at 60 kmph in sports mode. The light should clear.
+4. Wait for some more time, and if it still does not go, visit the service centre.
+
+---
+
+DPF LIGHT
+Warning light: DPF light, diesel particulate filter warning
+
+The actual DPF light - follow all points above for engine light, the light should go away. If not visit the service centre.
+
+---
+
+WATER IN FUEL FILTER
+Warning light: Water in fuel filter warning light
+
+Drain the fuel filter of excessive water. This can be done at the service centre. Most of the times the light goes away at restarts, but if it persists, visit the service centre.
+
+---
+
+GLOW PLUGS
+Warning light: Glow plug warning light, glow plug indicator
+
+Indicates that one or more glow plugs need replacement. A visit to the service centre is required. These are covered under Warranty.
+
+---
+
+SPANNER ONLY
+Warning light: Spanner only, spanner symbol, wrench symbol, service reminder light
+
+This is a service reminder. Can be reset in the cluster options by the owner. No immediate action required.
+
+---
+
+CAR WITH SPANNER
+Warning light: Car with spanner, car with wrench, car icon with spanner, vehicle with spanner warning light
+
+An issue has been detected. Steps to resolve:
+1. Disconnect the battery negative terminal.
+2. Press the horn a few times.
+3. Reconnect the battery and check if the light has gone.
+4. Wait for some more time and drive on.
+5. If it persists, please visit the Tata authorised service centre.
+
+---

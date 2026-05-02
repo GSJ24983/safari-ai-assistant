@@ -1,0 +1,10 @@
+# Secret keys — NEVER upload these
+.env
+
+# ChromaDB data — too large for GitHub, users regenerate it
+chroma_db/
+
+# Python clutter
+__pycache__/
+*.pyc
+.DS_Store
