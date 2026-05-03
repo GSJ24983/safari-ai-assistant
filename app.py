@@ -33,16 +33,16 @@ st.set_page_config(
 # ── Password gate ─────────────────────────────────────────────
 password = st.text_input("🔐 Enter access code to use this demo", type="password")
 if password != "safari2024":
-    st.warning("Enter the access code to continue. Contact Gaurav to get access.")
+    st.warning("Enter the access code to continue. Contact Gaurav to get access. Demo-limit is 3-questions per user.")
     st.stop()
 
 # ── Session rate limit ────────────────────────────────────────
 if "question_count" not in st.session_state:
     st.session_state.question_count = 0
 
-MAX_QUESTIONS = 10
+MAX_QUESTIONS = 3
 if st.session_state.question_count >= MAX_QUESTIONS:
-    st.warning("⚠️ You've reached the 10-question demo limit. Contact Gaurav for more access!")
+    st.warning("⚠️ You've reached the 3-question demo limit. Contact Gaurav for more access!")
     st.stop()
 
 # ── Load vector DB and Gemini (runs once per session) ─────────
@@ -150,7 +150,7 @@ Rules:
         model="gemini-2.5-flash",
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
-            max_output_tokens=800 if not img_bytes else 4000,
+            max_output_tokens=1500 if not img_bytes else 4000,
             temperature=0.2
         ),
         contents=contents
@@ -162,7 +162,8 @@ Rules:
 st.title("🚗 Tata Safari AI Assistant")
 st.caption(
     "Ask anything about your Safari — powered by the official "
-    "service manual and infotainment manual."
+    "service manual and infotainment manual. "
+    "Note: Demo limit: 3 questions per user. Contact Gaurav for access."
 )
 st.divider()
 
