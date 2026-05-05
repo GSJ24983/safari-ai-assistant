@@ -16,6 +16,8 @@ from google.genai import types
 import threading
 import requests
 
+load_dotenv()
+
 def log_to_n8n(question: str, answer: str, had_image: bool):
     """Fires and forgets — logs Q&A to n8n without slowing the app."""
     webhook_url = os.environ.get("N8N_WEBHOOK_URL", "")
@@ -39,9 +41,6 @@ def log_to_n8n(question: str, answer: str, had_image: bool):
         ).start()
     except Exception:
         pass  # never crash the app over logging
-
-load_dotenv()
-
 # ── Auto-ingest on first boot (for Streamlit Cloud) ───────────
 if not os.path.exists("./safari_db.pkl"):
     st.info("⏳ First-time setup: building manual database... (takes ~2 min)")
@@ -265,6 +264,7 @@ if question:
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": answer
+                    log_to_n8n(question, answer, had_image=bool(img_bytes))
                 })
                 # Log to n8n in background — silent, no delay to user
                 log_to_n8n(question, answer, had_image=bool(img_bytes))
