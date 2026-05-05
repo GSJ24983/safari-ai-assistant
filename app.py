@@ -16,7 +16,9 @@ import requests
 load_dotenv()
 
 # ── Feedback logging (Make.com webhook) ──────────────────────
-def log_to_webhook(question: str, answer: str, had_image: bool, user: str = "unknown"):
+def log_to_webhook(question: str, answer: str, had_image: bool,
+                   user: str = "unknown", input_tokens: int = 0,
+                   output_tokens: int = 0, feedback: str = None):
     """Fires and forgets — logs Q&A to Make.com without slowing the app."""
     webhook_url = os.environ.get("N8N_WEBHOOK_URL", "")
     if not webhook_url:
@@ -28,7 +30,10 @@ def log_to_webhook(question: str, answer: str, had_image: bool, user: str = "unk
         "question": question,
         "answer": answer[:500],   # first 500 chars — enough for analysis
         "had_image": had_image,
-        "answer_length": len(answer)
+        "answer_length": len(answer),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "feedback": feedback        # None for normal logs, "helpful"/"unhelpful" for thumbs
     }
 
     try:
@@ -184,7 +189,8 @@ def search_manual(query: str, n_results: int = 5) -> str:
 
 # ── Ask Gemini ────────────────────────────────────────────────
 def ask_gemini(question: str, context: str,
-               img_bytes: bytes = None, img_type: str = None) -> str:
+               img_bytes: bytes = None, img_type: str = None):
+    """Returns (answer_text, input_tokens, output_tokens)"""
 
     system_instruction = """You are the unofficial Tata Safari AI Assistant.
 Answer questions using the content provided. As of Apr 2026, this content is based on the official Tata Safari service manual and infotainment manual.
@@ -224,13 +230,20 @@ Rules:
         model="gemini-2.5-flash",
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
-            max_output_tokens=1500 if not img_bytes else 4000,
+            max_output_tokens=3000 if not img_bytes else 4000,  # increased from 1500
             temperature=0.2
         ),
         contents=contents
     )
 
-    return response.text
+    # Extract token usage
+    try:
+        input_tokens  = response.usage_metadata.prompt_token_count or 0
+        output_tokens = response.usage_metadata.candidates_token_count or 0
+    except Exception:
+        input_tokens, output_tokens = 0, 0
+
+    return response.text, input_tokens, output_tokens
 
 # ── Page header ───────────────────────────────────────────────
 st.title("🚗 Tata Safari AI Assistant")
@@ -307,17 +320,79 @@ if question:
                     context = search_manual(image_search_query)
                 else:
                     context = search_manual(question)
-                answer = ask_gemini(question, context, img_bytes, img_type)
+
+                answer, input_tokens, output_tokens = ask_gemini(
+                    question, context, img_bytes, img_type
+                )
+
                 st.markdown(answer)
-                st.caption("📖 Source: Tata Safari Official Manual · Beta")
+                st.caption(
+                    f"📖 Source: Tata Safari Official Manual · Beta &nbsp;|&nbsp; "
+                    f"🔢 Tokens: {input_tokens} in / {output_tokens} out"
+                )
+
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": answer
                 })
-                # Log to Make.com webhook in background — silent, no delay to user
-                log_to_webhook(question, answer, had_image=bool(img_bytes), user=current_user)
+
+                # Store last Q&A in session for thumbs feedback
+                st.session_state["last_question"]     = question
+                st.session_state["last_answer"]       = answer
+                st.session_state["last_input_tokens"] = input_tokens
+                st.session_state["last_output_tokens"]= output_tokens
+                st.session_state["last_had_image"]    = bool(img_bytes)
+                st.session_state["feedback_given"]    = False
+
+                # Log to Make.com webhook in background
+                log_to_webhook(
+                    question, answer,
+                    had_image=bool(img_bytes),
+                    user=current_user,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens
+                )
+
                 # Increment question counter after successful answer
                 st.session_state.question_count += 1
+
             except Exception as e:
                 st.error(f"Something went wrong: {e}")
                 st.info("Check the VS Code terminal for details.")
+
+# ── Thumbs feedback (shown after last answer) ─────────────────
+if (st.session_state.get("last_question")
+        and not st.session_state.get("feedback_given", True)):
+
+    st.markdown("**Was this answer helpful?**")
+    col1, col2, col3 = st.columns([1, 1, 8])
+
+    with col1:
+        if st.button("👍", key="thumbs_up"):
+            log_to_webhook(
+                question=st.session_state["last_question"],
+                answer=st.session_state["last_answer"],
+                had_image=st.session_state["last_had_image"],
+                user=current_user,
+                input_tokens=st.session_state["last_input_tokens"],
+                output_tokens=st.session_state["last_output_tokens"],
+                feedback="helpful"
+            )
+            st.session_state["feedback_given"] = True
+            st.toast("Thanks! 👍")
+            st.rerun()
+
+    with col2:
+        if st.button("👎", key="thumbs_down"):
+            log_to_webhook(
+                question=st.session_state["last_question"],
+                answer=st.session_state["last_answer"],
+                had_image=st.session_state["last_had_image"],
+                user=current_user,
+                input_tokens=st.session_state["last_input_tokens"],
+                output_tokens=st.session_state["last_output_tokens"],
+                feedback="unhelpful"
+            )
+            st.session_state["feedback_given"] = True
+            st.toast("Noted — we'll improve this. 👎")
+            st.rerun()
