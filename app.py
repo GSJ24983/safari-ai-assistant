@@ -13,6 +13,32 @@ from dotenv import load_dotenv
 import streamlit as st
 from google import genai
 from google.genai import types
+import threading
+import requests
+
+def log_to_n8n(question: str, answer: str, had_image: bool):
+    """Fires and forgets — logs Q&A to n8n without slowing the app."""
+    webhook_url = os.environ.get("N8N_WEBHOOK_URL", "")
+    if not webhook_url:
+        return  # silently skip if not configured
+    
+    payload = {
+        "timestamp": __import__("datetime").datetime.now().isoformat(),
+        "question": question,
+        "answer": answer[:500],   # first 500 chars — enough for analysis
+        "had_image": had_image,
+        "answer_length": len(answer)
+    }
+    
+    try:
+        # Run in background thread — user never waits for this
+        threading.Thread(
+            target=requests.post,
+            args=(webhook_url,),
+            kwargs={"json": payload, "timeout": 5}
+        ).start()
+    except Exception:
+        pass  # never crash the app over logging
 
 load_dotenv()
 
@@ -240,6 +266,8 @@ if question:
                     "role": "assistant",
                     "content": answer
                 })
+                # Log to n8n in background — silent, no delay to user
+                log_to_n8n(question, answer, had_image=bool(img_bytes))
                 # Increment question counter after successful answer
                 st.session_state.question_count += 1
             except Exception as e:
