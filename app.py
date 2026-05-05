@@ -10,9 +10,6 @@ import base64
 import pickle
 import numpy as np
 from dotenv import load_dotenv
-import streamlit as st
-from google import genai
-from google.genai import types
 import threading
 import requests
 
@@ -23,7 +20,7 @@ def log_to_n8n(question: str, answer: str, had_image: bool):
     webhook_url = os.environ.get("N8N_WEBHOOK_URL", "")
     if not webhook_url:
         return  # silently skip if not configured
-    
+
     payload = {
         "timestamp": __import__("datetime").datetime.now().isoformat(),
         "question": question,
@@ -31,7 +28,7 @@ def log_to_n8n(question: str, answer: str, had_image: bool):
         "had_image": had_image,
         "answer_length": len(answer)
     }
-    
+
     try:
         # Run in background thread — user never waits for this
         threading.Thread(
@@ -41,11 +38,17 @@ def log_to_n8n(question: str, answer: str, had_image: bool):
         ).start()
     except Exception:
         pass  # never crash the app over logging
+
 # ── Auto-ingest on first boot (for Streamlit Cloud) ───────────
 if not os.path.exists("./safari_db.pkl"):
+    import streamlit as st
     st.info("⏳ First-time setup: building manual database... (takes ~2 min)")
     subprocess.run(["python", "ingest.py"], check=True)
     st.rerun()
+
+import streamlit as st
+from google import genai
+from google.genai import types
 
 # ── Page setup ────────────────────────────────────────────────
 st.set_page_config(
@@ -55,19 +58,64 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ── Password gate ─────────────────────────────────────────────
-password = st.text_input("🔐 Enter access code to use this demo", type="password")
-if password != "safari2024":
-    st.warning("Enter the access code to continue. Contact Gaurav to get access. Demo-limit is 3-questions per user.")
-    st.stop()
+# ── Access gate (per-user codes) ──────────────────────────────
+def check_access():
+    """
+    Validates per-user access codes from Streamlit secrets.
+    Returns the user's label (e.g. 'beta_01') or stops the app.
+    """
+    try:
+        valid_codes = dict(st.secrets["access_codes"])
+    except Exception:
+        # Fallback: if secrets section missing, block all access
+        st.error("Access codes not configured. Contact Gaurav.")
+        st.stop()
 
-# ── Session rate limit ────────────────────────────────────────
+    # Already authenticated this session
+    if st.session_state.get("authenticated_user"):
+        return st.session_state["authenticated_user"]
+
+    # Show login screen
+    st.title("🚗 Tata Safari AI Assistant")
+    st.markdown("---")
+    code = st.text_input(
+        "🔐 Enter your access code",
+        type="password",
+        placeholder="Enter the code shared with you"
+    )
+
+    if st.button("Access Assistant"):
+        matched_user = next(
+            (label for label, val in valid_codes.items() if val == code),
+            None
+        )
+        if matched_user:
+            st.session_state["authenticated_user"] = matched_user
+            st.session_state["question_count"] = 0
+            st.rerun()
+        else:
+            st.error("Invalid code. Contact Gaurav on WhatsApp for access.")
+            st.stop()
+    else:
+        st.stop()
+
+current_user = check_access()
+
+# ── Per-user question limits ──────────────────────────────────
+QUESTION_LIMITS = {
+    "gaurav":  999,   # owner — unlimited
+    "default": 3      # all beta users
+}
+
+def get_limit(user_label: str) -> int:
+    return QUESTION_LIMITS.get(user_label, QUESTION_LIMITS["default"])
+
 if "question_count" not in st.session_state:
     st.session_state.question_count = 0
 
-MAX_QUESTIONS = 3
-if st.session_state.question_count >= MAX_QUESTIONS:
-    st.warning("⚠️ You've reached the 3-question demo limit. Contact Gaurav for more access!")
+limit = get_limit(current_user)
+if st.session_state.question_count >= limit:
+    st.warning(f"⚠️ You've reached the {limit}-question demo limit. Contact Gaurav for more access!")
     st.stop()
 
 # ── Load vector DB and Gemini (runs once per session) ─────────
@@ -111,7 +159,7 @@ if status.startswith("error"):
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ── Search using cosine similarity ───────────────────────────
+# ── Search using cosine similarity ────────────────────────────
 def search_manual(query: str, n_results: int = 5) -> str:
     try:
         query_vec = embed_model.encode([query])[0]
@@ -130,7 +178,7 @@ def search_manual(query: str, n_results: int = 5) -> str:
             chunk = chunks[idx]
             parts.append(f"[{chunk['source']} — Page {chunk['page']}]\n{chunk['text']}")
         return "\n\n---\n\n".join(parts)
-    except Exception as e:
+    except Exception:
         return ""
 
 # ── Ask Gemini ────────────────────────────────────────────────
@@ -188,7 +236,7 @@ st.title("🚗 Tata Safari AI Assistant")
 st.caption(
     "Ask anything about your Safari — powered by the official "
     "service manual and infotainment manual. "
-    "Note: Demo limit: 3 questions per user. Contact Gaurav for access."
+    f"Note: Demo limit: {limit} questions per user. Contact Gaurav for access."
 )
 st.divider()
 
@@ -264,7 +312,6 @@ if question:
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": answer
-                    log_to_n8n(question, answer, had_image=bool(img_bytes))
                 })
                 # Log to n8n in background — silent, no delay to user
                 log_to_n8n(question, answer, had_image=bool(img_bytes))
