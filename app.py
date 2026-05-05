@@ -15,14 +15,16 @@ import requests
 
 load_dotenv()
 
-def log_to_n8n(question: str, answer: str, had_image: bool):
-    """Fires and forgets — logs Q&A to n8n without slowing the app."""
+# ── Feedback logging (Make.com webhook) ──────────────────────
+def log_to_webhook(question: str, answer: str, had_image: bool, user: str = "unknown"):
+    """Fires and forgets — logs Q&A to Make.com without slowing the app."""
     webhook_url = os.environ.get("N8N_WEBHOOK_URL", "")
     if not webhook_url:
         return  # silently skip if not configured
 
     payload = {
         "timestamp": __import__("datetime").datetime.now().isoformat(),
+        "user": user,
         "question": question,
         "answer": answer[:500],   # first 500 chars — enough for analysis
         "had_image": had_image,
@@ -67,7 +69,6 @@ def check_access():
     try:
         valid_codes = dict(st.secrets["access_codes"])
     except Exception:
-        # Fallback: if secrets section missing, block all access
         st.error("Access codes not configured. Contact Gaurav.")
         st.stop()
 
@@ -313,8 +314,8 @@ if question:
                     "role": "assistant",
                     "content": answer
                 })
-                # Log to n8n in background — silent, no delay to user
-                log_to_n8n(question, answer, had_image=bool(img_bytes))
+                # Log to Make.com webhook in background — silent, no delay to user
+                log_to_webhook(question, answer, had_image=bool(img_bytes), user=current_user)
                 # Increment question counter after successful answer
                 st.session_state.question_count += 1
             except Exception as e:
