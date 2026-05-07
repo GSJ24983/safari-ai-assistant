@@ -192,7 +192,7 @@ def _expand_queries(question: str, is_image: bool) -> list[str]:
 
     # Keyword expansions for common query patterns
     expansions = {
-        "cruise":        ["cruise control lamp", "cruise control indicator", "cruise control activate"],
+        "cruise":        ["cruise control lamp green", "cruise control indicator dashboard", "cruise control activate procedure", "cruise control symbol meaning"],
         "spanner":       ["spanner sign warning", "service reminder indicator", "maintenance warning lamp",
                           "car with spanner warning light"],
         "service":       ["service reminder", "service due indicator", "maintenance interval"],
@@ -302,6 +302,11 @@ Rules:
   "Meaning not found in manual. Please contact your Tata authorised service centre."
 - Never guess or make up information.
 - Always complete your full response. Never stop mid-sentence or mid-list.
+- IMPORTANT: If the manual does not contain step-by-step procedure for something,
+  but DOES contain related information (indicator lamps, warnings, specs),
+  share ALL of that related information first. Do not say "not found" when
+  partially relevant content exists. Say "The manual does not describe the full
+  procedure, but here is what it does say:" and then share everything relevant.
 - Be clear, practical and helpful."""
 
     max_tokens = 3000 if not img_bytes else 4000
