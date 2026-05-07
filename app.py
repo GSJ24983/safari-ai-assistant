@@ -1,7 +1,13 @@
-# app.py — GEMINI VERSION (no ChromaDB — uses numpy similarity search)
+# app.py — GEMINI VERSION (numpy search + Gemini answers)
 # ============================================================
 # Tata Safari AI Assistant
-# Uses: numpy vector search (local) + Google Gemini (free AI brain)
+# Fixes applied:
+#   1. Retrieval accuracy — multi-query expansion + n_results=8 + dedup
+#   2. Gemini fallback — retry with gemini-2.0-flash-001 on failure
+#   3. Demo limit caption fixed to 3 (not 999)
+#   4. Token display removed from UI (still logged to Make.com)
+#   5. Data sources shown in sidebar
+#   6. Make.com webhook logging preserved (question + answer + feedback)
 # ============================================================
 
 import os
@@ -28,16 +34,15 @@ def log_to_webhook(question: str, answer: str, had_image: bool,
         "timestamp": __import__("datetime").datetime.now().isoformat(),
         "user": user,
         "question": question,
-        "answer": answer[:500],   # first 500 chars — enough for analysis
+        "answer": answer[:500],        # first 500 chars — enough for analysis
         "had_image": had_image,
         "answer_length": len(answer),
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
-        "feedback": feedback        # None for normal logs, "helpful"/"unhelpful" for thumbs
+        "feedback": feedback           # None for normal logs, "helpful"/"unhelpful" for thumbs
     }
 
     try:
-        # Run in background thread — user never waits for this
         threading.Thread(
             target=requests.post,
             args=(webhook_url,),
@@ -77,11 +82,9 @@ def check_access():
         st.error("Access codes not configured. Contact Gaurav.")
         st.stop()
 
-    # Already authenticated this session
     if st.session_state.get("authenticated_user"):
         return st.session_state["authenticated_user"]
 
-    # Show login screen
     st.title("🚗 Tata Safari AI Assistant")
     st.markdown("---")
     code = st.text_input(
@@ -110,7 +113,7 @@ current_user = check_access()
 # ── Per-user question limits ──────────────────────────────────
 QUESTION_LIMITS = {
     "gaurav":  999,   # owner — unlimited
-    "default": 3      # all beta users
+    "default": 3      # all beta users — 3 questions per session
 }
 
 def get_limit(user_label: str) -> int:
@@ -165,32 +168,125 @@ if status.startswith("error"):
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ── Search using cosine similarity ────────────────────────────
-def search_manual(query: str, n_results: int = 5) -> str:
+# ── FIX 1: Multi-query search with deduplication ─────────────
+# Problem: Single query often misses relevant chunks because
+# the user's phrasing doesn't match the manual's exact wording.
+# Solution: Expand each question into multiple search queries,
+# search for each, then deduplicate and return the best N chunks.
+
+def _expand_queries(question: str, is_image: bool) -> list[str]:
+    """
+    Returns a list of search queries derived from the user's question.
+    More queries = higher chance of finding the right chunk.
+    """
+    q = question.lower().strip()
+    queries = [question]  # always include the original
+
+    # For image uploads, add a broad warning-light sweep
+    if is_image:
+        queries += [
+            question + " warning light indicator dashboard tell tales error",
+            "dashboard warning light meaning",
+            "instrument cluster warning symbols",
+        ]
+
+    # Keyword expansions for common query patterns
+    expansions = {
+        "cruise":        ["cruise control lamp", "cruise control indicator", "cruise control activate"],
+        "spanner":       ["spanner sign warning", "service reminder indicator", "maintenance warning lamp",
+                          "car with spanner warning light"],
+        "service":       ["service reminder", "service due indicator", "maintenance interval"],
+        "oil":           ["engine oil warning", "oil pressure indicator", "oil change interval"],
+        "tpms":          ["tyre pressure warning", "TPMS reset", "tyre pressure monitoring"],
+        "abs":           ["ABS indicator", "anti-lock braking warning"],
+        "engine":        ["check engine light", "engine malfunction indicator"],
+        "battery":       ["battery warning lamp", "charging system indicator"],
+        "brake":         ["brake warning light", "brake fluid indicator"],
+        "temperature":   ["coolant temperature warning", "engine overheat indicator"],
+        "airbag":        ["airbag warning lamp", "SRS indicator"],
+        "android auto":  ["android auto connection", "infotainment connectivity"],
+        "apple carplay": ["carplay connection", "infotainment apple"],
+        "bluetooth":     ["bluetooth pairing", "phone connection infotainment"],
+    }
+
+    for keyword, alts in expansions.items():
+        if keyword in q:
+            queries += alts
+            break  # one expansion set per query is enough
+
+    return queries
+
+
+def search_manual(query: str, n_results: int = 8,
+                  is_image: bool = False) -> str:
+    """
+    Improved search: runs multiple query variants, merges results,
+    deduplicates by chunk index, and returns the top N by score.
+    Increased n_results from 5 → 8 to cast a wider net.
+    """
     try:
-        query_vec = embed_model.encode([query])[0]
-        embeddings = db["embeddings"]
-        chunks = db["chunks"]
+        all_queries   = _expand_queries(query, is_image)
+        embeddings    = db["embeddings"]
+        chunks        = db["chunks"]
 
-        # Cosine similarity
-        norms = np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_vec)
-        norms = np.where(norms == 0, 1e-10, norms)
-        scores = np.dot(embeddings, query_vec) / norms
+        seen_indices  = {}   # chunk_index → best_score
 
-        top_indices = np.argsort(scores)[::-1][:n_results]
+        for q in all_queries:
+            query_vec = embed_model.encode([q])[0]
+            norms     = np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_vec)
+            norms     = np.where(norms == 0, 1e-10, norms)
+            scores    = np.dot(embeddings, query_vec) / norms
+
+            top_indices = np.argsort(scores)[::-1][:n_results]
+            for idx in top_indices:
+                score = float(scores[idx])
+                # Keep the best score seen for each chunk across all queries
+                if idx not in seen_indices or score > seen_indices[idx]:
+                    seen_indices[idx] = score
+
+        # Sort all discovered chunks by best score, take top N
+        sorted_chunks = sorted(seen_indices.items(), key=lambda x: x[1], reverse=True)[:n_results]
 
         parts = []
-        for idx in top_indices:
+        for idx, score in sorted_chunks:
             chunk = chunks[idx]
             parts.append(f"[{chunk['source']} — Page {chunk['page']}]\n{chunk['text']}")
+
         return "\n\n---\n\n".join(parts)
+
     except Exception:
         return ""
 
-# ── Ask Gemini ────────────────────────────────────────────────
+
+# ── FIX 2: Ask Gemini with fallback model ────────────────────
+# Primary model: gemini-2.5-flash (best quality)
+# Fallback model: gemini-2.0-flash-001 (used if primary fails)
+# This handles quota errors, 429s, and model unavailability.
+
+PRIMARY_MODEL  = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-2.0-flash-001"
+
+def _call_gemini_model(model_name: str, system_instruction: str,
+                        contents, max_tokens: int):
+    """Single Gemini call. Raises on failure."""
+    response = gemini_client.models.generate_content(
+        model=model_name,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            max_output_tokens=max_tokens,
+            temperature=0.2
+        ),
+        contents=contents
+    )
+    return response
+
+
 def ask_gemini(question: str, context: str,
                img_bytes: bytes = None, img_type: str = None):
-    """Returns (answer_text, input_tokens, output_tokens)"""
+    """
+    Returns (answer_text, input_tokens, output_tokens, model_used).
+    Tries PRIMARY_MODEL first. On any exception, retries with FALLBACK_MODEL.
+    """
 
     system_instruction = """You are the unofficial Tata Safari AI Assistant.
 Answer questions using the content provided. As of Apr 2026, this content is based on the official Tata Safari service manual and infotainment manual.
@@ -208,12 +304,14 @@ Rules:
 - Always complete your full response. Never stop mid-sentence or mid-list.
 - Be clear, practical and helpful."""
 
+    max_tokens = 3000 if not img_bytes else 4000
+
     if img_bytes:
         text_part  = types.Part(text=
             f'A Tata Safari owner uploaded this dashboard image and asks: "{question}"\n\n'
             f'Relevant manual sections:\n\n{context or "None found."}\n\n'
             f'Please identify what you see in the image (warning light, error indicator, error) '
-            f'and advise the owner based on the manual content.'
+            f'and advise the owner based on the manual content. '
             f'IMPORTANT: Identify and explain ALL warning lights and error indicators visible in the image. '
             f'Complete your full response — do not stop partway through the list.'
         )
@@ -226,31 +324,42 @@ Rules:
             f'Please answer based on the manual content above.'
         )
 
-    response = gemini_client.models.generate_content(
-        model="gemini-2.5-flash",
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            max_output_tokens=3000 if not img_bytes else 4000,  # increased from 1500
-            temperature=0.2
-        ),
-        contents=contents
-    )
+    model_used = PRIMARY_MODEL
+    try:
+        response = _call_gemini_model(PRIMARY_MODEL, system_instruction, contents, max_tokens)
+    except Exception as primary_err:
+        # Fallback to secondary model
+        try:
+            model_used = FALLBACK_MODEL
+            response   = _call_gemini_model(FALLBACK_MODEL, system_instruction, contents, max_tokens)
+        except Exception as fallback_err:
+            # Both models failed — return a user-friendly error message
+            return (
+                "⚠️ The AI service is temporarily unavailable. "
+                "Please try again in a moment. If the problem persists, "
+                "contact Gaurav.",
+                0, 0,
+                "error"
+            )
 
-    # Extract token usage
     try:
         input_tokens  = response.usage_metadata.prompt_token_count or 0
         output_tokens = response.usage_metadata.candidates_token_count or 0
     except Exception:
         input_tokens, output_tokens = 0, 0
 
-    return response.text, input_tokens, output_tokens
+    return response.text, input_tokens, output_tokens, model_used
+
 
 # ── Page header ───────────────────────────────────────────────
 st.title("🚗 Tata Safari AI Assistant")
+
+# FIX 3: Caption shows correct limit (pulled from QUESTION_LIMITS, not hardcoded)
+questions_left = limit - st.session_state.question_count
 st.caption(
-    "Ask anything about your Safari — powered by the official "
-    "service manual and infotainment manual. "
-    f"Note: Demo limit: {limit} questions per user. Contact Gaurav for access."
+    f"Ask anything about your Safari — powered by official manuals. "
+    f"Demo: {questions_left} question{'s' if questions_left != 1 else ''} remaining. "
+    f"Contact Gaurav for full access."
 )
 st.divider()
 
@@ -266,6 +375,28 @@ with st.sidebar:
         "How do I activate cruise control?",
     ]:
         st.caption(f"→ {q}")
+
+    st.divider()
+
+    # FIX 5: Show data sources so users know what the assistant knows
+    st.markdown("### 📚 Knowledge Sources")
+    st.markdown(
+        """
+The assistant answers from these official documents:
+
+- 📘 **Tata Safari Service Manual**  
+  Engine, dashboard, warning lights, maintenance schedules, fluids
+
+- 📗 **Tata Safari Infotainment Manual**  
+  Audio system, Android Auto, Apple CarPlay, Bluetooth, navigation
+
+- 📙 **Tata Safari Ready Reckoner** *(if ingested)*  
+  Quick-reference specs and community tips
+
+*Answers are limited to content in these documents. For issues not covered, please visit a Tata authorised service centre.*
+"""
+    )
+
     st.divider()
     if st.button("🗑️ Clear chat"):
         st.session_state.messages = []
@@ -315,28 +446,24 @@ if question:
     with st.chat_message("assistant"):
         with st.spinner("Searching manual..."):
             try:
-                if img_bytes:
-                    image_search_query = question + " warning light indicator dashboard tell tales error"
-                    context = search_manual(image_search_query)
-                else:
-                    context = search_manual(question)
+                context = search_manual(question, is_image=bool(img_bytes))
 
-                answer, input_tokens, output_tokens = ask_gemini(
+                answer, input_tokens, output_tokens, model_used = ask_gemini(
                     question, context, img_bytes, img_type
                 )
 
                 st.markdown(answer)
-                st.caption(
-                    f"📖 Source: Tata Safari Official Manual · Beta &nbsp;|&nbsp; "
-                    f"🔢 Tokens: {input_tokens} in / {output_tokens} out"
-                )
+
+                # FIX 4: No token count shown. Clean source caption only.
+                fallback_note = " *(fallback model)*" if model_used == FALLBACK_MODEL else ""
+                st.caption(f"📖 Source: Tata Safari Official Manual · Beta{fallback_note}")
 
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": answer
                 })
 
-                # Store last Q&A in session for thumbs feedback
+                # Store last Q&A for thumbs feedback
                 st.session_state["last_question"]     = question
                 st.session_state["last_answer"]       = answer
                 st.session_state["last_input_tokens"] = input_tokens
@@ -345,6 +472,8 @@ if question:
                 st.session_state["feedback_given"]    = False
 
                 # Log to Make.com webhook in background
+                # Webhook payload includes tokens for your Excel tracking
+                # even though they are no longer shown in the UI
                 log_to_webhook(
                     question, answer,
                     had_image=bool(img_bytes),
