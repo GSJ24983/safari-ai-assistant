@@ -190,29 +190,390 @@ def _expand_queries(question: str, is_image: bool) -> list[str]:
             "instrument cluster warning symbols",
         ]
 
-    # Keyword expansions for common query patterns
-    expansions = {
-        "cruise":        ["cruise control lamp green", "cruise control indicator dashboard", "cruise control activate procedure", "cruise control symbol meaning"],
-        "spanner":       ["spanner sign warning", "service reminder indicator", "maintenance warning lamp",
-                          "car with spanner warning light"],
-        "service":       ["service reminder", "service due indicator", "maintenance interval"],
-        "oil":           ["engine oil warning", "oil pressure indicator", "oil change interval"],
-        "tpms":          ["tyre pressure warning", "TPMS reset", "tyre pressure monitoring"],
-        "abs":           ["ABS indicator", "anti-lock braking warning"],
-        "engine":        ["check engine light", "engine malfunction indicator"],
-        "battery":       ["battery warning lamp", "charging system indicator"],
-        "brake":         ["brake warning light", "brake fluid indicator"],
-        "temperature":   ["coolant temperature warning", "engine overheat indicator"],
-        "airbag":        ["airbag warning lamp", "SRS indicator"],
-        "android auto":  ["android auto connection", "infotainment connectivity"],
-        "apple carplay": ["carplay connection", "infotainment apple"],
-        "bluetooth":     ["bluetooth pairing", "phone connection infotainment"],
+    # ── Keyword expansions — full Safari/iRA vocabulary ──────────
+    # Multiple keywords can match a single query (no break).
+    # Ordered multi-word keys first so "android auto" matches before "auto".
+    KEYWORD_EXPANSIONS = {
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 1: WARNING LIGHTS & TELL TALES
+        # ═══════════════════════════════════════════════════════
+
+        "cruise":        ["cruise control lamp green", "cruise control indicator dashboard",
+                          "cruise control activate procedure", "cruise control symbol meaning",
+                          "cruise ON set the speed message", "adaptive cruise control ACC indicator",
+                          "ACC follow distance setting", "cruise control not working highway"],
+
+        "spanner":       ["spanner sign warning", "service reminder indicator",
+                          "maintenance warning lamp", "car with spanner warning light",
+                          "wrench symbol dashboard meaning", "yellow spanner light stays on"],
+
+        "service":       ["service reminder", "service due indicator", "maintenance interval",
+                          "service overdue warning", "reset service light procedure",
+                          "next service km display"],
+
+        "oil":           ["engine oil warning", "oil pressure indicator", "oil change interval",
+                          "check oil pressure voice alert", "low oil level warning red light",
+                          "oil pressure lamp engine damage risk"],
+
+        "tpms":          ["tyre pressure warning", "TPMS reset procedure", "tyre pressure monitoring",
+                          "TPMS chime 4 seconds meaning", "TPMS fault 20 second chime",
+                          "TPMS sensor missing indicator", "TPMS high temperature warning",
+                          "TPMS air leakage alert", "check vehicle tyres voice alert",
+                          "tyre pressure low all four tyres"],
+
+        "abs":           ["ABS indicator amber light", "anti-lock braking warning",
+                          "ABS light stays on amber", "ABS fault normal braking still works",
+                          "ABS EBD malfunction together"],
+
+        "engine":        ["check engine light MIL", "engine malfunction indicator lamp",
+                          "MIL lamp solid vs flashing", "engine fault code diagnosis",
+                          "check engine with oil pressure lamp together"],
+
+        "battery":       ["battery warning lamp", "charging system indicator",
+                          "please charge battery voice alert", "12V battery drain issue",
+                          "smart key battery low warning", "alternator fault warning"],
+
+        "brake":         ["brake warning light red", "brake fluid level low voice alert",
+                          "park brake cum low brake fluid indicator", "EBD malfunction brake warning",
+                          "release park brake voice alert", "brake fluid low amber red light"],
+
+        "temperature":   ["coolant temperature warning red blink", "engine overheat indicator",
+                          "high coolant temperature chime continuous", "coolant temp hazardous blink",
+                          "engine overheat do not remove radiator cap", "coolant temperature amber then red"],
+
+        "airbag":        ["airbag warning lamp SRS", "airbag indicator stays on after 4 seconds",
+                          "passenger airbag PAB indicator roof", "SRS warning lamp blinking",
+                          "airbag deactivated symbol meaning"],
+
+        "water in fuel": ["water in fuel indicator amber", "water in fuel diesel warning",
+                          "check water in fuel voice alert", "drain water fuel filter procedure",
+                          "water in fuel injection system damage"],
+
+        "fuel":          ["low fuel warning amber", "check fuel level voice alert",
+                          "fuel system fault flashing light", "distance to empty fuel display",
+                          "fuel level low refill immediately", "fuel gauge reading incorrect"],
+
+        "epas":          ["EPAS fault indicator amber", "electric power steering warning",
+                          "power steering malfunction symbol", "EPAS fault service center",
+                          "steering heavy after EPAS warning"],
+
+        "esp":           ["ESP off indicator amber", "electronic stability program warning",
+                          "ESP off symbol dashboard meaning", "traction control ESP light",
+                          "ESP malfunction indicator"],
+
+        "ebd":           ["EBD malfunction warning", "electronic brake force distribution fault",
+                          "EBD fault with brake warning together", "EBD indicator red light meaning"],
+
+        "hhc":           ["HHC fault indicator amber", "hill hold control malfunction",
+                          "hill hold not working warning", "HHC system fault stays on"],
+
+        "hdc":           ["HDC ON lamp green meaning", "hill descent control indicator",
+                          "hill descent enable disable procedure", "HDC speed setting"],
+
+        "apb":           ["APB malfunction indicator", "automatic parking brake fault",
+                          "APB warning stays 4 seconds", "electronic handbrake fault indicator",
+                          "auto hold failure amber warning"],
+
+        "auto hold":     ["automatic hold active green", "automatic hold failure amber",
+                          "auto hold indicator white meaning", "AVH fault ESP system warning",
+                          "auto hold switch location"],
+
+        "drl":           ["DRL daytime running lamp indicator green", "DRL activate deactivate procedure",
+                          "park lamp switch twice to toggle DRL", "daytime running light symbol"],
+
+        "door ajar":     ["door ajar lamp red", "one of the doors open voice alert",
+                          "driver door open please check voice", "tailgate open voice alert",
+                          "door open indicator independent four doors", "boot open warning"],
+
+        "seatbelt":      ["fasten driver seatbelt voice alert", "fasten passenger seatbelt alert",
+                          "rear seatbelt reminder 60 seconds", "seatbelt warning 15kmph trigger",
+                          "seatbelt telltale 90 second audio warning", "seatbelt buzzer how to stop"],
+
+        "peps":          ["PEPS indication IGN green", "PEPS ACC amber indicator",
+                          "smart key not found warning", "key not found voice alert",
+                          "PEPS key battery low meaning", "keyless entry not working"],
+
+        "transmission":  ["AT fault indicator amber", "AMT fault warning dashboard",
+                          "transmission oil temperature high indicator", "gearbox fault warning light",
+                          "transmission failure detected symbol", "limp mode AT fault indicator"],
+
+        "amt":           ["AMT fault warning", "automated manual transmission indicator",
+                          "AMT warning light dashboard", "AMT limp mode",
+                          "press brake to start AMT reminder"],
+
+        "press brake":   ["press brake clutch amber symbol", "press brake to start engine indicator",
+                          "brake clutch press reminder ignition", "press clutch amber light AMT"],
+
+        "urea":          ["low urea level warning amber", "DEF level low refill soon message",
+                          "SCR system fault warning", "BSVI chime urea low continuous",
+                          "urea refill procedure how to", "DEF refill 7 litres max procedure",
+                          "SCR fault level 1 2 3 chime", "urea tank capacity 15 litres",
+                          "emission system fault indicator", "AdBlue DEF indicator meaning India"],
+
+        "scr":           ["SCR system fault warning", "urea DEF level low",
+                          "BSVI emission system indicator", "SCR fault chime meaning"],
+
+        "high beam assist": ["HBA indicator green dashboard", "high beam assist fault amber",
+                             "high beam assist not working", "HBA blink fault frequency",
+                             "auto high beam not switching off"],
+
+        "rear fog":      ["rear fog lamp amber indicator", "fog lamp on warning symbol",
+                          "rear fog lamp disable procedure"],
+
+        "position lamp": ["position lamp indicator green meaning", "parking lamp on reminder",
+                          "park lamp ON battery drain warning", "head lamp forgot to turn off chime"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 2: ADAS FEATURES
+        # ═══════════════════════════════════════════════════════
+
+        "fcw":           ["FCW forward collision warning indicator", "AEB automatic emergency braking symbol",
+                          "forward collision warning false braking", "AEB too sensitive disable",
+                          "FCW AEB not working after windshield repair", "front radar blocked warning"],
+
+        "aeb":           ["AEB automatic emergency braking", "forward collision warning FCW",
+                          "AEB disable procedure", "collision warning bumper damage recalibration"],
+
+        "ldw":           ["LDW lane departure warning indicator", "lane departure beep while driving",
+                          "LDW disable procedure", "lane departure warning sensitivity",
+                          "lane departure false alert road markings", "LDW not working faded lane lines"],
+
+        "tsr":           ["TSR traffic sign recognition indicator", "speed limit sign not detected",
+                          "traffic sign recognition wrong speed display", "TSR Vienna convention signs only",
+                          "TSR not working night rain", "speed limit blink warning meaning",
+                          "TSR 10 metre detection zone limitation"],
+
+        "blind spot":    ["BSD LCA blind spot detection indicator", "lane change alert ORVM warning light",
+                          "blind spot warning mirror indicator", "BSD not working rear bumper damage",
+                          "ORVM indicator failure rear ADAS message", "BSD disable procedure"],
+
+        "bsd":           ["BSD blind spot detection indicator", "ORVM warning light lane change",
+                          "blind spot sensor misaligned contact service", "BSD disable procedure"],
+
+        "rcta":          ["RCTA rear cross traffic alert indicator", "reverse parking collision warning",
+                          "cross traffic alert not working", "RCTA radar rear bumper",
+                          "rear cross traffic alert enable disable"],
+
+        "doa":           ["DOA door open alert indicator", "door open alert while reversing",
+                          "door open warning when overtaking"],
+
+        "ddoa":          ["DDOA driver doze off alert", "driver drowsiness detection warning",
+                          "have a tea break voice alert meaning", "drowsy driver warning chime",
+                          "DDOA level 1 2 3 chime stages", "fatigue alert steering behavior monitor",
+                          "driver attention warning not camera based", "DDOA reset after break"],
+
+        "drowsy":        ["DDOA driver drowsiness detection", "have a tea break voice alert",
+                          "fatigue warning chime stages", "driver doze off alert meaning"],
+
+        "adas":          ["ADAS sensor blocked warning", "ADAS false braking complex environment",
+                          "ADAS not working after windshield replacement", "ADAS calibration after repair",
+                          "ADAS bumper clean mud snow ice", "ADAS narrow road limitation",
+                          "rear ADAS malfunction contact service"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 3: iRA INFOTAINMENT
+        # ═══════════════════════════════════════════════════════
+
+        "android auto":  ["android auto connection wireless", "android auto not connecting",
+                          "wired android auto USB cable procedure", "android auto bluetooth pair first",
+                          "android auto carplay simultaneous not possible", "android auto disconnect auto",
+                          "google assistant mic android auto"],
+
+        "apple carplay": ["carplay wireless connection", "carplay not detected iPhone",
+                          "wired carplay USB connection procedure", "hey siri carplay activation",
+                          "carplay and android auto same time not supported", "carplay disconnecting"],
+
+        "carplay":       ["apple carplay connection iPhone", "carplay USB wireless procedure",
+                          "carplay not working infotainment", "hey siri carplay"],
+
+        "bluetooth":     ["bluetooth pairing procedure iRA", "pair new device infotainment",
+                          "10 paired devices maximum iRA", "bluetooth audio AVRCP version",
+                          "bluetooth auto connect on", "delete paired device infotainment"],
+
+        "voice assistant": ["voice assistant activate procedure", "steering wheel mic button",
+                            "native voice assistant commands", "voice assistant not responding",
+                            "voice commands list what to say"],
+
+        "alexa":         ["alexa not working network error", "alexa iRA infotainment setup",
+                          "alexa connectivity issue vehicle", "alexa active esim required",
+                          "built-in alexa car infotainment"],
+
+        "drivenext":     ["DriveNext app fuel efficiency", "DriveNext trip score dashboard",
+                          "DriveNext driving safety score", "DriveNext trip history",
+                          "DriveNext fuel analysis"],
+
+        "what3words":    ["what3words navigation infotainment", "what3words address car",
+                          "three word location address iRA"],
+
+        "aqi":           ["AQI air quality index display", "AQI level poor hazardous meaning",
+                          "cabin air quality indicator", "AQI reading infotainment screen",
+                          "air purification AQI good moderate bad"],
+
+        "wireless charger": ["wireless charger not working", "wireless charging error icon",
+                             "WPC wireless phone charger symbol", "Qi charging pad infotainment",
+                             "charging error popup infotainment meaning"],
+
+        "mood light":    ["mood light ambient settings", "mood light color change infotainment",
+                          "ambient light enable disable", "mood light not working"],
+
+        "jbl":           ["JBL mode infotainment", "JBL audio preset modes",
+                          "JBL sound system modes selection", "JBL mode switch procedure"],
+
+        "media":         ["USB media not playing", "pen drive format compatible infotainment",
+                          "video play USB only infotainment", "AVRCP version bluetooth media issue",
+                          "media source auto switch", "infotainment no audio source connected"],
+
+        "radio":         ["FM AM radio infotainment", "auto store radio presets",
+                          "auto tuning infotainment", "radio preset save procedure"],
+
+        "steering controls": ["steering wheel control volume", "SWC accept call button",
+                              "steering scroll next track", "steering wheel mic activate voice"],
+
+        "quick access":  ["QAD quick access drawer infotainment", "swipe down top screen iRA",
+                          "brightness control infotainment", "display off sleep mode iRA",
+                          "park assist quick access shortcut"],
+
+        "connectivity":  ["Wi-Fi infotainment settings", "connectivity settings iRA",
+                          "software update infotainment settings", "phone settings infotainment"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 4: CONNECTED CAR & OTA
+        # ═══════════════════════════════════════════════════════
+
+        "ira":           ["iRA connected car service", "iRA app features vehicle",
+                          "iRA subscription renewal esim", "iRA esim deactivated what to do",
+                          "connected car services not working", "iRA 12 month esim activation"],
+
+        "ress":          ["RESS remote engine start stop", "remote start engine iRA app",
+                          "remote engine start not working", "RESS feature procedure"],
+
+        "fota":          ["FOTA firmware over the air update", "OTA software update in progress",
+                          "infotainment update notification", "system update how long"],
+
+        "ecall":         ["E-call emergency call procedure", "B-call breakdown call feature",
+                          "emergency call 5 second cancel", "TATA Asist breakdown call feature",
+                          "ecall auto trigger crash", "roadside assistance response time"],
+
+        "bcall":         ["B-call breakdown call feature", "TATA Asist roadside assistance",
+                          "B-call switch dashboard location", "breakdown call procedure"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 5: DRIVE & TERRAIN MODES
+        # ═══════════════════════════════════════════════════════
+
+        "drive mode":    ["auto drive mode activated voice alert", "comfort drive mode indicator",
+                          "dynamic drive mode symbol", "rough road mode activated meaning",
+                          "city drive mode indicator", "sport drive mode activated",
+                          "economy drive mode fuel saving", "drive mode selector location"],
+
+        "terrain mode":  ["wet mode activated indicator", "mud ruts mode activated symbol",
+                          "sand mode dashboard indicator", "grass snow mode meaning",
+                          "terrain mode voice alert infotainment", "terrain selector procedure"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 6: CLIMATE CONTROL
+        # ═══════════════════════════════════════════════════════
+
+        "fatc":          ["FATC fully automatic temperature control", "dual zone climate control panel",
+                          "FATC auto mode not cooling", "express cooling on off voice alert",
+                          "cabin air purification FATC", "rear AC zone climate control"],
+
+        "ac":            ["AC compressor fault warning", "climate control symbol dashboard",
+                          "recirculation mode indicator", "auto climate temperature setting",
+                          "AC not cooling properly FATC", "express cooling activate procedure"],
+
+        "cabin purifier": ["cabin air purification filter", "PM2.5 cabin filter indicator",
+                           "advance filter cabin air quality", "air purifier infotainment AQI link"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 7: CAMERA & PARKING
+        # ═══════════════════════════════════════════════════════
+
+        "surround view": ["surround view system SVS indicator", "360 camera activation",
+                          "bird eye view camera procedure", "SVS calibration after bumper repair",
+                          "surround view not working black screen", "SVS camera blocked warning"],
+
+        "rear camera":   ["RVC rear view camera not working", "rear view camera guidelines",
+                          "reverse camera delay start", "rear camera image distorted"],
+
+        "parking sensor": ["PDC park distance control beeping", "parking sensor disable quick access",
+                           "park assist shortcut QAD", "front rear parking sensor not beeping",
+                           "ultrasonic sensor blocked cleaning"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 8: KEYS & SECURITY
+        # ═══════════════════════════════════════════════════════
+
+        "smart key":     ["smart key PEPS not detected", "key not found voice alert",
+                          "smart key battery low replace", "PEPS tailgate switch outside",
+                          "keyless entry not working range", "passive entry push start"],
+
+        "immobilizer":   ["anti-theft immobilizer warning", "immobilizer fault not starting",
+                          "engine immobilizer indicator", "transponder key immobilizer"],
+
+        "escl":          ["ESCL chime steering column lock", "electronic steering column lock engaged",
+                          "ESCL inadvertently engaged warning", "steering lock fault procedure"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 9: COMFORT & SEATING
+        # ═══════════════════════════════════════════════════════
+
+        "ventilated seat": ["ventilated seat not working", "ventilated seat default setting",
+                            "ventilated seat spillage damage warning", "ventilated seat not cooling",
+                            "ventilated seat enable infotainment"],
+
+        "seat":          ["power seat memory indicator", "seat heating indicator",
+                          "ventilated seat symbol dashboard", "seat memory position recall"],
+
+        "sunroof":       ["power sunroof switch overhead console", "sunroof open reminder",
+                          "panoramic roof control procedure", "sunroof tilt vent position"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 10: AUDIO REMINDERS & CHIMES
+        # ═══════════════════════════════════════════════════════
+
+        "audio reminder": ["key-in reminder buzzer meaning", "park lamp on reminder buzzer",
+                           "park brake on reminder 5kmph chime", "reverse gear buzzer meaning",
+                           "high coolant temperature continuous chime", "TPMS chime duration meaning",
+                           "BSVI urea chime stages meaning", "DDOA chime level change"],
+
+        "chime":         ["audio chime meaning dashboard", "buzzer sound while driving meaning",
+                          "continuous chime what does it mean", "chime on ignition on meaning"],
+
+        "reverse":       ["reverse gear chime buzzer", "reverse camera auto activate",
+                          "PDC beep reverse procedure", "RCTA activate in reverse"],
+
+        # ═══════════════════════════════════════════════════════
+        # SECTION 11: GENERIC CATCH-ALLS
+        # ═══════════════════════════════════════════════════════
+
+        "lane":          ["lane departure warning LDW indicator", "lane keep assist symbol",
+                          "LDW disable procedure", "lane assist false beeping cause"],
+
+        "forward collision": ["FCW indicator dashboard", "AEB activation too sensitive",
+                              "collision alert disable procedure", "forward collision warning radar"],
+
+        "towing":        ["tow mode indicator", "trailer sway warning",
+                          "tow haul mode light", "trailer brake indicator"],
+
+        "hill":          ["hill hold HHC fault indicator", "hill start assist lamp",
+                          "hill descent HDC ON lamp green", "HDC speed setting procedure",
+                          "HHC prevent rollback uphill"],
+
+        "traction":      ["traction control light", "ESC ESP stability indicator",
+                          "ESP off indicator amber meaning", "engine drag torque control EDTC",
+                          "EDTC brake slip slippery road"],
+
+        "steering":      ["EPAS fault indicator amber", "electric power steering warning",
+                          "steering malfunction symbol heavy steering", "ESCL chime steering lock"],
     }
 
-    for keyword, alts in expansions.items():
+    # Multi-keyword matching — no break, so "ABS and EBD fault together"
+    # correctly fires both "abs" and "ebd" expansion sets
+    for keyword, alts in KEYWORD_EXPANSIONS.items():
         if keyword in q:
             queries += alts
-            break  # one expansion set per query is enough
 
     return queries
 
@@ -302,11 +663,6 @@ Rules:
   "Meaning not found in manual. Please contact your Tata authorised service centre."
 - Never guess or make up information.
 - Always complete your full response. Never stop mid-sentence or mid-list.
-- IMPORTANT: If the manual does not contain step-by-step procedure for something,
-  but DOES contain related information (indicator lamps, warnings, specs),
-  share ALL of that related information first. Do not say "not found" when
-  partially relevant content exists. Say "The manual does not describe the full
-  procedure, but here is what it does say:" and then share everything relevant.
 - Be clear, practical and helpful."""
 
     max_tokens = 3000 if not img_bytes else 4000
